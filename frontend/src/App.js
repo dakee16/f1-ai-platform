@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, ReferenceLine
+  Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 
-// ─── Tire compound colors (official F1 colors) ──────────────────────────────
+// ─── Tire compound colors (official F1 colors) ───────────────────────────────
 const COMPOUND_COLORS = {
   SOFT: "#e10600",
   MEDIUM: "#ffd700",
@@ -13,16 +13,16 @@ const COMPOUND_COLORS = {
   WET: "#0067ff",
 };
 
-// ─── Each driver gets a chart line color ────────────────────────────────────
+// ─── Each driver gets a chart line color ─────────────────────────────────────
 const DRIVER_COLORS = [
   "#e10600", "#00d2be", "#ff8700", "#dc0000",
   "#0600ef", "#005aff", "#900000", "#ffffff",
   "#2293d1", "#37bedd", "#b6babd", "#c92d4b",
   "#006f62", "#0090ff", "#1e6176", "#f596c8",
-  "#358c75", "#b6babd", "#fd4bc7", "#d3ab17",
+  "#358c75", "#fd4bc7", "#d3ab17", "#aaaaaa",
 ];
 
-// ─── Small card component ────────────────────────────────────────────────────
+// ─── Small stat card ─────────────────────────────────────────────────────────
 function StatCard({ label, value, sub }) {
   return (
     <div style={{
@@ -43,7 +43,7 @@ function StatCard({ label, value, sub }) {
   );
 }
 
-// ─── Custom tooltip for the chart ────────────────────────────────────────────
+// ─── Custom chart tooltip ─────────────────────────────────────────────────────
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
@@ -64,10 +64,10 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-// ─── Compound badge ──────────────────────────────────────────────────────────
+// ─── Compound badge ───────────────────────────────────────────────────────────
 function CompoundBadge({ compound }) {
   const bg = COMPOUND_COLORS[compound] ?? "#555";
-  const textColor = compound === "HARD" ? "#000" : compound === "MEDIUM" ? "#000" : "#fff";
+  const textColor = (compound === "HARD" || compound === "MEDIUM") ? "#000" : "#fff";
   return (
     <span style={{
       background: bg,
@@ -83,51 +83,65 @@ function CompoundBadge({ compound }) {
   );
 }
 
-// ─── Main App ────────────────────────────────────────────────────────────────
+// ─── DNF subscript badge ──────────────────────────────────────────────────────
+function DnfBadge() {
+  return (
+    <sup style={{
+      fontSize: 9,
+      color: "#ff5555",
+      fontWeight: 700,
+      letterSpacing: 0.5,
+      marginLeft: 1,
+      opacity: 0.9,
+    }}>
+      DNF
+    </sup>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [laps, setLaps] = useState([]);
+  const [driverStatus, setDriverStatus] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Multi-select: which drivers to show on chart
   const [selectedDrivers, setSelectedDrivers] = useState([]);
-
-  // Table: single driver detail view
   const [tableDriver, setTableDriver] = useState(null);
-
-  // All unique driver codes in the data
   const [allDrivers, setAllDrivers] = useState([]);
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8001/race-laps")
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data) => {
-        setLaps(data);
-        const drivers = [...new Set(data.map((d) => d.Driver))].sort();
+    Promise.all([
+      fetch("http://127.0.0.1:8001/race-laps").then((r) => r.json()),
+      fetch("http://127.0.0.1:8001/driver-status").then((r) => r.json()),
+    ])
+      .then(([lapData, statusData]) => {
+        setLaps(lapData);
+        setDriverStatus(statusData);
+
+        // Build driver list from statusData (all 20) not lapData (misses early DNFs)
+        const drivers = Object.keys(statusData).sort();
         setAllDrivers(drivers);
-        // Default: show first 3 drivers on chart
-        setSelectedDrivers(drivers.slice(0, 3));
-        setTableDriver(drivers[0]);
+
+        // Default chart: first 3 drivers that have lap data
+        const driversWithLaps = [...new Set(lapData.map((d) => d.Driver))];
+        setSelectedDrivers(driversWithLaps.slice(0, 3));
+        setTableDriver(driversWithLaps[0]);
+
         setLoading(false);
       })
       .catch((err) => {
-        console.error(err);
         setError(err.message);
         setLoading(false);
       });
   }, []);
 
-  // Toggle a driver in the multi-select list
   function toggleDriver(driver) {
     setSelectedDrivers((prev) =>
       prev.includes(driver) ? prev.filter((d) => d !== driver) : [...prev, driver]
     );
   }
 
-  // Stats for the table driver
   const tableLaps = laps.filter((l) => l.Driver === tableDriver);
   const validTimes = tableLaps.map((l) => l.LapTimeSeconds).filter(Boolean);
   const fastestLap = validTimes.length ? Math.min(...validTimes) : null;
@@ -135,8 +149,6 @@ export default function App() {
     ? (validTimes.reduce((a, b) => a + b, 0) / validTimes.length).toFixed(3)
     : null;
 
-  // Build chart data: one object per lap number, with a key per selected driver
-  // Each lap number gets { LapNumber: 5, VER: 74.21, LEC: 75.03, ... }
   const chartData = React.useMemo(() => {
     if (!selectedDrivers.length) return [];
     const lapMap = {};
@@ -150,14 +162,14 @@ export default function App() {
     return Object.values(lapMap).sort((a, b) => a.LapNumber - b.LapNumber);
   }, [laps, selectedDrivers]);
 
-  // ─── Styles ────────────────────────────────────────────────────────────────
+  // ─── Styles ──────────────────────────────────────────────────────────────────
   const styles = {
     app: {
       minHeight: "100vh",
       background: "#0f0f0f",
       color: "#fff",
       fontFamily: "'Inter', 'Helvetica Neue', sans-serif",
-      padding: "0 0 60px",
+      paddingBottom: 60,
     },
     header: {
       background: "#111",
@@ -167,17 +179,8 @@ export default function App() {
       alignItems: "center",
       gap: 16,
     },
-    redBar: {
-      width: 5,
-      height: 36,
-      background: "#e10600",
-      borderRadius: 2,
-    },
-    section: {
-      maxWidth: 1200,
-      margin: "0 auto",
-      padding: "32px 32px 0",
-    },
+    redBar: { width: 5, height: 36, background: "#e10600", borderRadius: 2 },
+    section: { maxWidth: 1200, margin: "0 auto", padding: "32px 32px 0" },
     sectionTitle: {
       color: "#e10600",
       fontSize: 11,
@@ -186,18 +189,8 @@ export default function App() {
       textTransform: "uppercase",
       marginBottom: 16,
     },
-    statsRow: {
-      display: "flex",
-      gap: 12,
-      flexWrap: "wrap",
-      marginBottom: 32,
-    },
-    driverGrid: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 8,
-      marginBottom: 24,
-    },
+    statsRow: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 32 },
+    driverGrid: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 24 },
     driverBtn: (active, color) => ({
       padding: "6px 14px",
       border: `2px solid ${active ? color : "#333"}`,
@@ -208,6 +201,9 @@ export default function App() {
       fontSize: 13,
       fontWeight: 600,
       transition: "all 0.15s",
+      display: "inline-flex",
+      alignItems: "baseline",
+      gap: 3,
     }),
     chartBox: {
       background: "#141414",
@@ -216,11 +212,7 @@ export default function App() {
       padding: "24px 12px 12px",
       marginBottom: 40,
     },
-    table: {
-      width: "100%",
-      borderCollapse: "collapse",
-      fontSize: 13,
-    },
+    table: { width: "100%", borderCollapse: "collapse", fontSize: 13 },
     th: {
       color: "#888",
       fontWeight: 600,
@@ -231,14 +223,10 @@ export default function App() {
       borderBottom: "1px solid #222",
       textAlign: "left",
     },
-    td: {
-      padding: "9px 14px",
-      borderBottom: "1px solid #1a1a1a",
-      color: "#ccc",
-    },
+    td: { padding: "9px 14px", borderBottom: "1px solid #1a1a1a", color: "#ccc" },
   };
 
-  // ─── Render ────────────────────────────────────────────────────────────────
+  // ─── Loading / error states ───────────────────────────────────────────────
   if (loading) {
     return (
       <div style={{ ...styles.app, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -258,8 +246,10 @@ export default function App() {
     );
   }
 
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div style={styles.app}>
+
       {/* Header */}
       <div style={styles.header}>
         <div style={styles.redBar} />
@@ -288,31 +278,28 @@ export default function App() {
             />
           )}
           {avgLap && (
-            <StatCard
-              label={`Avg Lap · ${tableDriver}`}
-              value={`${avgLap}s`}
-            />
+            <StatCard label={`Avg Lap · ${tableDriver}`} value={`${avgLap}s`} />
           )}
         </div>
 
         {/* ── Multi-Driver Comparison Chart ── */}
         <div style={styles.sectionTitle}>Lap Time Comparison</div>
         <p style={{ color: "#666", fontSize: 13, marginBottom: 16, marginTop: -8 }}>
-          Select up to 5 drivers to compare on the chart
+          Select drivers to compare — DNF drivers show their laps up to retirement
         </p>
 
-        {/* Driver toggle buttons */}
         <div style={styles.driverGrid}>
           {allDrivers.map((driver, i) => {
             const color = DRIVER_COLORS[i % DRIVER_COLORS.length];
             const active = selectedDrivers.includes(driver);
+            const dnf = driverStatus[driver] && !driverStatus[driver].finished;
             return (
               <button
                 key={driver}
                 style={styles.driverBtn(active, color)}
                 onClick={() => toggleDriver(driver)}
               >
-                {driver}
+                {driver}{dnf && <DnfBadge />}
               </button>
             );
           })}
@@ -335,10 +322,8 @@ export default function App() {
                 label={{ value: "Lap Time (s)", angle: -90, position: "insideLeft", fill: "#666", fontSize: 12 }}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Legend
-                wrapperStyle={{ color: "#888", fontSize: 12, paddingTop: 12 }}
-              />
-              {selectedDrivers.map((driver, i) => (
+              <Legend wrapperStyle={{ color: "#888", fontSize: 12, paddingTop: 12 }} />
+              {selectedDrivers.map((driver) => (
                 <Line
                   key={driver}
                   type="monotone"
@@ -354,77 +339,106 @@ export default function App() {
         </div>
 
         {/* ── Per-Driver Detail Table ── */}
-        <div style={styles.sectionTitle}>Driver Lap Detail</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 8 }}>
+          <div style={styles.sectionTitle}>Driver Lap Detail</div>
+          {driverStatus[tableDriver] && !driverStatus[tableDriver].finished && (
+            <div style={{
+              background: "#ff000022",
+              border: "1px solid #ff4444",
+              borderRadius: 6,
+              padding: "4px 12px",
+              color: "#ff6666",
+              fontSize: 12,
+              fontWeight: 700,
+              marginBottom: 16,
+            }}>
+              DNF — {driverStatus[tableDriver].status}
+            </div>
+          )}
+        </div>
 
-        {/* Single driver selector for table */}
+        {/* Driver selector for table */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
           {allDrivers.map((driver, i) => {
             const color = DRIVER_COLORS[i % DRIVER_COLORS.length];
+            const dnf = driverStatus[driver] && !driverStatus[driver].finished;
             return (
               <button
                 key={driver}
                 style={styles.driverBtn(tableDriver === driver, color)}
                 onClick={() => setTableDriver(driver)}
               >
-                {driver}
+                {driver}{dnf && <DnfBadge />}
               </button>
             );
           })}
         </div>
 
-        {/* Table */}
+        {/* Lap detail table */}
         <div style={{ background: "#141414", border: "1px solid #222", borderRadius: 10, overflow: "hidden" }}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>Lap</th>
-                <th style={styles.th}>Lap Time (s)</th>
-                <th style={styles.th}>Compound</th>
-                <th style={styles.th}>Tyre Life</th>
-                <th style={styles.th}>Δ Fastest</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableLaps.map((lap, i) => {
-                const delta = fastestLap ? (lap.LapTimeSeconds - fastestLap).toFixed(3) : null;
-                const isFastest = lap.LapTimeSeconds === fastestLap;
-                return (
-                  <tr
-                    key={i}
-                    style={{
-                      background: isFastest ? "#e1060012" : "transparent",
-                      transition: "background 0.1s",
-                    }}
-                  >
-                    <td style={styles.td}>{lap.LapNumber}</td>
-                    <td style={{
-                      ...styles.td,
-                      color: isFastest ? "#e10600" : "#ccc",
-                      fontWeight: isFastest ? 700 : 400,
-                      fontFamily: "monospace",
-                    }}>
-                      {lap.LapTimeSeconds?.toFixed(3)}s
-                      {isFastest && <span style={{ marginLeft: 8, fontSize: 10, color: "#e10600" }}>▼ FASTEST</span>}
-                    </td>
-                    <td style={styles.td}>
-                      <CompoundBadge compound={lap.Compound} />
-                    </td>
-                    <td style={{ ...styles.td, color: "#888" }}>
-                      {lap.TyreLife} laps
-                    </td>
-                    <td style={{
-                      ...styles.td,
-                      color: isFastest ? "#e10600" : "#555",
-                      fontFamily: "monospace",
-                      fontSize: 12,
-                    }}>
-                      {isFastest ? "—" : `+${delta}s`}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          {tableLaps.length === 0 ? (
+            <div style={{ padding: "32px", textAlign: "center", color: "#555" }}>
+              No lap data available for {tableDriver}
+              {driverStatus[tableDriver] && !driverStatus[tableDriver].finished && (
+                <span style={{ color: "#ff6666", marginLeft: 8 }}>
+                  ({driverStatus[tableDriver].status})
+                </span>
+              )}
+            </div>
+          ) : (
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>Lap</th>
+                  <th style={styles.th}>Lap Time (s)</th>
+                  <th style={styles.th}>Compound</th>
+                  <th style={styles.th}>Tyre Life</th>
+                  <th style={styles.th}>Δ Fastest</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tableLaps.map((lap, i) => {
+                  const delta = fastestLap
+                    ? (lap.LapTimeSeconds - fastestLap).toFixed(3)
+                    : null;
+                  const isFastest = lap.LapTimeSeconds === fastestLap;
+                  return (
+                    <tr
+                      key={i}
+                      style={{ background: isFastest ? "#e1060012" : "transparent" }}
+                    >
+                      <td style={styles.td}>{lap.LapNumber}</td>
+                      <td style={{
+                        ...styles.td,
+                        color: isFastest ? "#e10600" : "#ccc",
+                        fontWeight: isFastest ? 700 : 400,
+                        fontFamily: "monospace",
+                      }}>
+                        {lap.LapTimeSeconds?.toFixed(3)}s
+                        {isFastest && (
+                          <span style={{ marginLeft: 8, fontSize: 10, color: "#e10600" }}>
+                            ▼ FASTEST
+                          </span>
+                        )}
+                      </td>
+                      <td style={styles.td}>
+                        <CompoundBadge compound={lap.Compound} />
+                      </td>
+                      <td style={{ ...styles.td, color: "#888" }}>{lap.TyreLife} laps</td>
+                      <td style={{
+                        ...styles.td,
+                        color: isFastest ? "#e10600" : "#555",
+                        fontFamily: "monospace",
+                        fontSize: 12,
+                      }}>
+                        {isFastest ? "—" : `+${delta}s`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
 
       </div>
