@@ -71,3 +71,20 @@ def get_driver_status():
 
     cached_status = status_map
     return cached_status
+
+@app.get("/stint-data")
+def get_stint_data():
+    session = load_session()
+
+    laps = session.laps[['Driver', 'LapNumber', 'Compound', 'Stint']].copy()
+    laps = laps.dropna(subset=['Compound', 'Stint'])
+
+    # Group by driver + stint number + compound
+    # Get the first and last lap of each stint
+    stints = (
+        laps.groupby(['Driver', 'Stint', 'Compound'])
+        .agg(StartLap=('LapNumber', 'min'), EndLap=('LapNumber', 'max'))
+        .reset_index()
+    )
+
+    return stints.to_dict(orient='records')

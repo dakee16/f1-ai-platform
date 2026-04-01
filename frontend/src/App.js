@@ -8,7 +8,7 @@ import {
 const COMPOUND_COLORS = {
   SOFT: "#e10600",
   MEDIUM: "#ffd700",
-  HARD: "#ffffff",
+  HARD: "#eeeeee",
   INTERMEDIATE: "#39b54a",
   WET: "#0067ff",
 };
@@ -83,7 +83,7 @@ function CompoundBadge({ compound }) {
   );
 }
 
-// ─── DNF subscript badge ──────────────────────────────────────────────────────
+// ─── DNF superscript badge ────────────────────────────────────────────────────
 function DnfBadge() {
   return (
     <sup style={{
@@ -99,10 +99,102 @@ function DnfBadge() {
   );
 }
 
+// ─── Tire Stint Strategy Chart ────────────────────────────────────────────────
+function StintChart({ stints, allDrivers, driverStatus }) {
+  const maxLap = Math.max(...stints.map((s) => s.EndLap), 1);
+
+  const driversWithStints = allDrivers.filter((d) =>
+    stints.some((s) => s.Driver === d)
+  );
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      {driversWithStints.map((driver) => {
+        const driverStints = stints.filter((s) => s.Driver === driver);
+        const dnf = driverStatus[driver] && !driverStatus[driver].finished;
+
+        return (
+          <div
+            key={driver}
+            style={{ display: "flex", alignItems: "center", marginBottom: 6, gap: 10 }}
+          >
+            {/* Driver label */}
+            <div style={{
+              width: 40,
+              fontSize: 11,
+              fontWeight: 700,
+              color: dnf ? "#ff5555" : "#aaa",
+              textAlign: "right",
+              flexShrink: 0,
+            }}>
+              {driver}
+              {dnf && <sup style={{ fontSize: 8, color: "#ff5555" }}>DNF</sup>}
+            </div>
+
+            {/* Stint bars */}
+            <div style={{
+              flex: 1,
+              height: 22,
+              background: "#1a1a1a",
+              borderRadius: 4,
+              position: "relative",
+              minWidth: 0,
+            }}>
+              {driverStints.map((stint, i) => {
+                const left = ((stint.StartLap - 1) / maxLap) * 100;
+                const width = ((stint.EndLap - stint.StartLap + 1) / maxLap) * 100;
+                const color = COMPOUND_COLORS[stint.Compound] ?? "#555";
+                const textColor = (stint.Compound === "HARD" || stint.Compound === "MEDIUM")
+                  ? "#000" : "#fff";
+                return (
+                  <div
+                    key={i}
+                    title={`${stint.Compound} · Laps ${stint.StartLap}–${stint.EndLap}`}
+                    style={{
+                      position: "absolute",
+                      left: `${left}%`,
+                      width: `${width}%`,
+                      height: "100%",
+                      background: color,
+                      borderRadius: 3,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 9,
+                      fontWeight: 700,
+                      color: textColor,
+                      overflow: "hidden",
+                      boxSizing: "border-box",
+                      borderRight: "2px solid #0f0f0f",
+                    }}
+                  >
+                    {width > 8 ? stint.Compound[0] : ""}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Lap number axis */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+        <div style={{ width: 40 }} />
+        <div style={{ flex: 1, display: "flex", justifyContent: "space-between" }}>
+          {[1, Math.round(maxLap * 0.25), Math.round(maxLap * 0.5), Math.round(maxLap * 0.75), maxLap].map((lap) => (
+            <span key={lap} style={{ fontSize: 10, color: "#555" }}>Lap {lap}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [laps, setLaps] = useState([]);
   const [driverStatus, setDriverStatus] = useState({});
+  const [stints, setStints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -114,20 +206,17 @@ export default function App() {
     Promise.all([
       fetch("http://127.0.0.1:8001/race-laps").then((r) => r.json()),
       fetch("http://127.0.0.1:8001/driver-status").then((r) => r.json()),
+      fetch("http://127.0.0.1:8001/stint-data").then((r) => r.json()),
     ])
-      .then(([lapData, statusData]) => {
+      .then(([lapData, statusData, stintData]) => {
         setLaps(lapData);
         setDriverStatus(statusData);
-
-        // Build driver list from statusData (all 20) not lapData (misses early DNFs)
+        setStints(stintData);
         const drivers = Object.keys(statusData).sort();
         setAllDrivers(drivers);
-
-        // Default chart: first 3 drivers that have lap data
         const driversWithLaps = [...new Set(lapData.map((d) => d.Driver))];
         setSelectedDrivers(driversWithLaps.slice(0, 3));
         setTableDriver(driversWithLaps[0]);
-
         setLoading(false);
       })
       .catch((err) => {
@@ -336,6 +425,19 @@ export default function App() {
               ))}
             </LineChart>
           </ResponsiveContainer>
+        </div>
+
+        {/* ── Tire Strategy ── */}
+        <div style={styles.sectionTitle}>Tire Strategy</div>
+        <p style={{ color: "#666", fontSize: 13, marginBottom: 16, marginTop: -8 }}>
+          Each bar shows a tire stint — hover for compound and lap range
+        </p>
+        <div style={styles.chartBox}>
+          <StintChart
+            stints={stints}
+            allDrivers={allDrivers}
+            driverStatus={driverStatus}
+          />
         </div>
 
         {/* ── Per-Driver Detail Table ── */}
