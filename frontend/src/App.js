@@ -521,17 +521,18 @@ export default function App() {
     fetch(`${API}/model-info`).then((r) => r.json()).then(setModelInfo).catch(() => { });
   }, []);
 
-  const fetchRaceData = useCallback(() => {
+  const fetchRaceData = useCallback(async () => {
     if (!selectedYear || !selectedGp) return;
     setDataLoading(true); setError(null);
     const params = `year=${selectedYear}&gp=${encodeURIComponent(selectedGp)}`;
-    Promise.all([
-      fetch(`${API}/race-laps?${params}`).then((r) => r.json()),
-      fetch(`${API}/driver-status?${params}`).then((r) => r.json()),
-      fetch(`${API}/stint-data?${params}`).then((r) => r.json()),
-      fetch(`${API}/position-data?${params}`).then((r) => r.json()),
-      fetch(`${API}/race-overview?${params}`).then((r) => r.json()),
-    ]).then(([lapData, statusData, stintData, positionData, overviewData]) => {
+    try {
+      // Sequential — each waits for the previous so session only loads once
+      const lapData = await fetch(`${API}/race-laps?${params}`).then(r => r.json());
+      const statusData = await fetch(`${API}/driver-status?${params}`).then(r => r.json());
+      const stintData = await fetch(`${API}/stint-data?${params}`).then(r => r.json());
+      const positionData = await fetch(`${API}/position-data?${params}`).then(r => r.json());
+      const overviewData = await fetch(`${API}/race-overview?${params}`).then(r => r.json());
+
       setLaps(lapData); setDriverStatus(statusData); setStints(stintData);
       setPositions(positionData); setRaceOverview(overviewData);
       const drivers = Object.keys(statusData).sort();
@@ -540,7 +541,10 @@ export default function App() {
       setSelectedDrivers(driversWithLaps.slice(0, 3));
       setTableDriver(driversWithLaps[0]);
       setDataLoading(false);
-    }).catch((err) => { setError(err.message); setDataLoading(false); });
+    } catch (err) {
+      setError(err.message);
+      setDataLoading(false);
+    }
   }, [selectedYear, selectedGp]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
