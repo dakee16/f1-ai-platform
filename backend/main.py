@@ -17,7 +17,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-fastf1.Cache.enable_cache("../data")
+import os
+cache_dir = os.environ.get("FASTF1_CACHE", "/tmp/fastf1_cache")
+os.makedirs(cache_dir, exist_ok=True)
+fastf1.Cache.enable_cache(cache_dir)
 
 # ─── Per-race cache (key = "YEAR_GP") ────────────────────────────────────────
 session_cache = {}
