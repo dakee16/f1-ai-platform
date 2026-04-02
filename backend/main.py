@@ -4,6 +4,8 @@ import fastf1
 import pandas as pd
 import math
 from datetime import datetime
+import pickle
+import numpy as np
 
 app = FastAPI()
 
@@ -183,3 +185,69 @@ def debug_status(year: int = 2024, gp: str = "Monaco"):
             "classifiedPosition": str(row["ClassifiedPosition"]),
         })
     return output
+
+# ─── Load model once at startup ───────────────────────────────────────────────
+model_data = None
+
+def get_model():
+    global model_data
+    if model_data is None:
+        try:
+            with open("lap_time_model.pkl", "rb") as f:
+                model_data = pickle.load(f)
+        except FileNotFoundError:
+            return None
+    return model_data
+
+@app.get("/predict-laptime")
+def predict_laptime(
+    compound: str = "MEDIUM",
+    tyre_life: int = 10,
+    lap_number: int = 30,
+    total_laps: int = 78,
+    baseline_seconds: float = 0,
+):
+    md = get_model()
+    if md is None:
+        return {"error": "Model not trained yet. Run train_model.py first."}
+
+    compound_map = md["compound_map"]
+    compound_code = compound_map.get(compound.upper(), 1)
+    lap_normalized = lap_number / max(total_laps, 1)
+
+    features = np.array([[
+        tyre_life,
+        tyre_life ** 2,
+        tyre_life * compound_code,
+        compound_code,
+        lap_normalized,
+    ]])
+
+    predicted_delta = float(md["model"].predict(features)[0])
+
+    # If a baseline is provided, give absolute time, otherwise just the delta
+    predicted_seconds = round(
+        baseline_seconds + predicted_delta if baseline_seconds > 0 else predicted_delta,
+        3
+    )
+
+    return {
+        "predictedSeconds": predicted_seconds,
+        "predictedDelta": round(predicted_delta, 3),
+        "compound": compound,
+        "tyreLife": tyre_life,
+        "lapNumber": lap_number,
+        "modelMAE": round(md["mae_seconds"], 3),
+        "hasBaseline": baseline_seconds > 0,
+    }
+
+@app.get("/model-info")
+def model_info():
+    md = get_model()
+    if md is None:
+        return {"trained": False}
+    return {
+        "trained": True,
+        "trainedOnLaps": md["trained_on"],
+        "maeSeconds": round(md["mae_seconds"], 3),
+    }
