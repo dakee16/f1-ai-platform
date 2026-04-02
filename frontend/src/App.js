@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
-  BarChart, Bar, Cell,
 } from "recharts";
 
 const API = "https://f1-ai-platform-production.up.railway.app";
@@ -271,7 +270,7 @@ function StrategySimulator({ allDrivers, driverStatus, selectedYear, selectedGp 
   // Default to first driver with lap data
   useEffect(() => {
     if (allDrivers.length && !driver) setDriver(allDrivers[0]);
-  }, [allDrivers]);
+  }, [allDrivers, driver]);
 
   async function simulate() {
     if (!driver) return;
@@ -342,7 +341,6 @@ function StrategySimulator({ allDrivers, driverStatus, selectedYear, selectedGp 
   }
 
   function CustomStintBar() {
-    const left1 = 0;
     const width1 = (pitLap / totalLaps) * 100;
     const width2 = ((totalLaps - pitLap) / totalLaps) * 100;
     const color1 = COMPOUND_COLORS[compound1] ?? "#555";
@@ -545,6 +543,7 @@ export default function App() {
     }).catch((err) => { setError(err.message); setDataLoading(false); });
   }, [selectedYear, selectedGp]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (!racesLoading) fetchRaceData(); }, [selectedYear, selectedGp, racesLoading]);
 
   function toggleDriver(driver) {
