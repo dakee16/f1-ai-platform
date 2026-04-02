@@ -251,3 +251,114 @@ def model_info():
         "trainedOnLaps": md["trained_on"],
         "maeSeconds": round(md["mae_seconds"], 3),
     }
+
+@app.get("/simulate-strategy")
+def simulate_strategy(
+    year: int = 2024,
+    gp: str = "Monaco",
+    driver: str = "LEC",
+    custom_pit_lap: int = 0,
+    custom_compound_1: str = "MEDIUM",
+    custom_compound_2: str = "HARD",
+):
+    md = get_model()
+    if md is None:
+        return {"error": "Model not trained yet."}
+
+    # Get actual stints for this driver
+    key = cache_key(year, gp)
+    session = load_session(year, gp)
+
+    laps = session.laps[["Driver", "LapNumber", "LapTime", "Compound", "TyreLife"]].copy()
+    laps = laps.dropna(subset=["LapTime", "Compound"])
+    laps["LapTimeSeconds"] = laps["LapTime"].dt.total_seconds()
+    laps = laps[(laps["LapTimeSeconds"] > 60) & (laps["LapTimeSeconds"] < 200)]
+
+    driver_laps = laps[laps["Driver"] == driver].copy()
+    if driver_laps.empty:
+        return {"error": f"No lap data for {driver}"}
+
+    total_laps = int(driver_laps["LapNumber"].max())
+    baseline = float(driver_laps["LapTimeSeconds"].quantile(0.05))
+
+    compound_map = md["compound_map"]
+
+    def predict_lap(compound, tyre_life, lap_number):
+        compound_code = compound_map.get(compound.upper(), 1)
+        lap_normalized = lap_number / max(total_laps, 1)
+        features = np.array([[
+            tyre_life,
+            tyre_life ** 2,
+            tyre_life * compound_code,
+            compound_code,
+            lap_normalized,
+        ]])
+        delta = float(md["model"].predict(features)[0])
+        return round(baseline + delta, 3)
+
+    # ── Simulate actual strategy ──────────────────────────────────────────────
+    actual_laps_detail = []
+    for _, row in driver_laps.iterrows():
+        predicted = predict_lap(row["Compound"], int(row["TyreLife"]), int(row["LapNumber"]))
+        actual_laps_detail.append({
+            "lap": int(row["LapNumber"]),
+            "compound": row["Compound"],
+            "tyreLife": int(row["TyreLife"]),
+            "actualSeconds": round(row["LapTimeSeconds"], 3),
+            "predictedSeconds": predicted,
+        })
+
+    actual_predicted_total = sum(l["predictedSeconds"] for l in actual_laps_detail)
+    actual_real_total = sum(l["actualSeconds"] for l in actual_laps_detail)
+
+    # Get actual stint structure
+    stint_data = session.laps[session.laps["Driver"] == driver][
+        ["LapNumber", "Compound", "Stint", "TyreLife"]
+    ].dropna()
+    actual_stints = (
+        stint_data.groupby(["Stint", "Compound"])
+        .agg(StartLap=("LapNumber", "min"), EndLap=("LapNumber", "max"))
+        .reset_index()
+        .sort_values("StartLap")
+        .to_dict(orient="records")
+    )
+
+    # ── Simulate custom strategy ──────────────────────────────────────────────
+    custom_laps_detail = []
+    if custom_pit_lap > 0 and custom_pit_lap < total_laps:
+        # Stint 1: custom_compound_1 from lap 1 to custom_pit_lap
+        for lap in range(1, custom_pit_lap + 1):
+            tyre_life = lap
+            predicted = predict_lap(custom_compound_1, tyre_life, lap)
+            custom_laps_detail.append({
+                "lap": lap,
+                "compound": custom_compound_1,
+                "predictedSeconds": predicted,
+            })
+        # Stint 2: custom_compound_2 from pit lap to end
+        for lap in range(custom_pit_lap + 1, total_laps + 1):
+            tyre_life = lap - custom_pit_lap
+            predicted = predict_lap(custom_compound_2, tyre_life, lap)
+            custom_laps_detail.append({
+                "lap": lap,
+                "compound": custom_compound_2,
+                "predictedSeconds": predicted,
+            })
+
+    custom_predicted_total = sum(l["predictedSeconds"] for l in custom_laps_detail)
+
+    # Delta: positive = custom is slower, negative = custom is faster
+    delta = round(custom_predicted_total - actual_predicted_total, 3) if custom_laps_detail else None
+
+    return {
+        "driver": driver,
+        "totalLaps": total_laps,
+        "baseline": round(baseline, 3),
+        "actualStints": actual_stints,
+        "actualPredictedTotal": round(actual_predicted_total, 3),
+        "actualRealTotal": round(actual_real_total, 3),
+        "customPredictedTotal": round(custom_predicted_total, 3) if custom_laps_detail else None,
+        "delta": delta,
+        "actualLaps": actual_laps_detail,
+        "customLaps": custom_laps_detail,
+    }
