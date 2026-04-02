@@ -152,5 +152,4 @@ On server startup, a background thread preloads all available races into memory 
 ---
 
 ## Built By
-
-[Sanan Goel](https://github.com/Sanan-goel) & [Daksh](https://github.com/dakee16)
+[Daksh](https://github.com/dakee16)
