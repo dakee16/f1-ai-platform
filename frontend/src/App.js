@@ -481,8 +481,8 @@ function StrategySimulator({ allDrivers, driverStatus, selectedYear, selectedGp 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [availableRaces, setAvailableRaces] = useState({});
-  const [selectedYear, setSelectedYear] = useState("2024");
-  const [selectedGp, setSelectedGp] = useState("Monaco Grand Prix");
+  const [selectedYear, setSelectedYear] = useState("2022");
+  const [selectedGp, setSelectedGp] = useState("Bahrain Grand Prix");
   const [racesLoading, setRacesLoading] = useState(true);
 
   const [laps, setLaps] = useState([]);
@@ -504,8 +504,8 @@ export default function App() {
     fetch(`${API}/available-races`).then((r) => r.json()).then((data) => {
       setAvailableRaces(data);
       setRacesLoading(false);
-      if (data["2024"]?.includes("Monaco Grand Prix")) {
-        setSelectedYear("2024"); setSelectedGp("Monaco Grand Prix");
+      if (data["2022"]?.includes("Bahrain Grand Prix")) {
+        setSelectedYear("2022"); setSelectedGp("Bahrain Grand Prix");
       } else {
         const y = Object.keys(data).sort()[0];
         if (y) { setSelectedYear(y); setSelectedGp(data[y][0]); }
